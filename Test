@@ -1,0 +1,70 @@
+import boto3
+
+def send_email(subject, body, sender, recipient):
+
+    ses_client = boto3.client('ses')
+
+    response = ses_client.send_email(
+
+        Source=sender,
+
+        Destination={'ToAddresses': [recipient]},
+
+        Message={
+
+            'Subject': {'Data': subject},
+
+            'Body': {'Text': {'Data': body}}
+
+        }
+
+    )
+
+    return response
+
+def lambda_handler(event, context):
+
+    # Configuration
+
+    email_subject = 'CloudTrail Service History Report'
+
+    email_sender = 'sender@example.com'  # Replace with your email address
+
+    email_recipient = 'recipient@example.com'  # Replace with the recipient email address
+
+    # Create a CloudTrail client
+
+    cloudtrail_client = boto3.client('cloudtrail')
+
+    # Lookup CloudTrail events for all services
+
+    response = cloudtrail_client.lookup_events()
+
+    # Generate the report
+
+    report = ''
+
+    for event in response['Events']:
+
+        report += f"Event Name: {event['EventName']}\n"
+
+        report += f"Event Time: {event['EventTime']}\n"
+
+        report += f"Event Source: {event['EventSource']}\n"
+
+        report += f"Username: {event['Username']}\n"
+
+        report += f"\n"
+
+    # Send the report via email
+
+    send_email(email_subject, report, email_sender, email_recipient)
+
+    return {
+
+        'statusCode': 200,
+
+        'body': 'Service history report sent successfully'
+
+    }
+
