@@ -1,0 +1,65 @@
+import boto3
+from botocore.exceptions import ClientError
+
+def get_untagged_s3_buckets():
+    s3_client = boto3.client('s3')
+
+    response = s3_client.list_buckets()
+
+    untagged_buckets = []
+
+    for bucket in response['Buckets']:
+        try:
+            tags = s3_client.get_bucket_tagging(Bucket=bucket['Name'])
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'NoSuchTagSet':
+                bucket_info = {
+                    'Name': bucket['Name'],
+                    'CreatedByID': bucket['CreationDate'],
+                    'AccountID': boto3.client('sts').get_caller_identity().get('Account')
+                }
+                untagged_buckets.append(bucket_info)
+
+    return untagged_buckets
+
+
+def send_email(subject, body):
+    ses_client = boto3.client('ses')
+
+    response = ses_client.send_email(
+        Source='sender@example.com',  # Update with your email address
+        Destination={
+            'ToAddresses': ['recipient@example.com']  # Update with the recipient's email address
+        },
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': body}}
+        }
+    )
+
+    print("Email sent successfully")
+    return response
+
+
+def lambda_handler(event, context):
+    untagged_buckets = get_untagged_s3_buckets()
+
+    # Prepare email content
+    subject = "Untagged S3 Buckets Report"
+    body = ""
+
+    if untagged_buckets:
+        body += "Untagged S3 buckets:\n\n"
+        for bucket in untagged_buckets:
+            body += f"Bucket Name: {bucket['Name']}\n"
+            body += f"Created By: {bucket['CreatedByID']}\n"
+            body += f"Account ID: {bucket['AccountID']}\n"
+            body += "\n"
+    else:
+        body = "No untagged S3 buckets found"
+
+    # Send the email
+    send_email(subject, body)
+
+    # Return the list of untagged buckets (optional)
+    return untagged_buckets
