@@ -1,0 +1,114 @@
+import boto3
+
+from datetime import datetime
+
+def lambda_handler(event, context):
+
+    # Get the region of the Lambda function
+
+    region = context.invoked_function_arn.split(":")[3]
+
+    # Create a CloudTrail client
+
+    cloudtrail_client = boto3.client('cloudtrail', region_name=region)
+
+    # Get the event history data from CloudTrail
+
+    response = cloudtrail_client.lookup_events(
+
+        LookupAttributes=[
+
+            {
+
+                'AttributeKey': 'EventName',
+
+                'AttributeValue': '*'
+
+            },
+
+        ],
+
+        StartTime=datetime.now().replace(hour=0, minute=0, second=0),
+
+        EndTime=datetime.now()
+
+    )
+
+    # Extract relevant information from the event history data
+
+    events = response['Events']
+
+    report = []
+
+    for event in events:
+
+        event_name = event['EventName']
+
+        event_time = event['EventTime'].strftime('%Y-%m-%d %H:%M:%S')
+
+        event_source = event['EventSource']
+
+        user_identity = event['UserIdentity']['UserName']
+
+        report.append(f"Event: {event_name}\nTime: {event_time}\nSource: {event_source}\nUser: {user_identity}\n\n")
+
+    # Create the report as a string
+
+    report_string = '\n'.join(report)
+
+    # Send the report via email using SES
+
+    ses_client = boto3.client('ses', region_name=region)
+
+    sender_email = 'your_sender_email@example.com'
+
+    recipient_email = 'your_recipient_email@example.com'
+
+    subject = 'Event History Report'
+
+    body = f"Event history report as of {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n\n{report_string}"
+
+    ses_client.send_email(
+
+        Source=sender_email,
+
+        Destination={
+
+            'ToAddresses': [
+
+                recipient_email,
+
+            ]
+
+        },
+
+        Message={
+
+            'Subject': {
+
+                'Data': subject
+
+            },
+
+            'Body': {
+
+                'Text': {
+
+                    'Data': body
+
+                }
+
+            }
+
+        }
+
+    )
+
+    return {
+
+        'statusCode': 200,
+
+        'body': 'Event history report sent successfully.'
+
+    }
+
