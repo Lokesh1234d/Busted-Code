@@ -1,0 +1,94 @@
+import boto3
+from botocore.exceptions import ClientError
+
+def send_email(subject, body, sender, recipient):
+    # Create a new SES client
+    ses_client = boto3.client('ses')
+
+    # Send the email
+    try:
+        response = ses_client.send_email(
+            Source=sender,
+            Destination={'ToAddresses': [recipient]},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            }
+        )
+    except ClientError as e:
+        print(f"Error sending email: {e.response['Error']['Message']}")
+        return False
+    else:
+        print("Email sent successfully")
+        return True
+
+def lambda_handler(event, context):
+    # Initialize the CloudTrail client
+    cloudtrail_client = boto3.client('cloudtrail')
+
+    # Retrieve CloudTrail events
+    response = cloudtrail_client.lookup_events(
+        LookupAttributes=[
+            {
+                'AttributeKey': 'EventName',
+                'AttributeValue': 'Create*'
+            },
+        ],
+        MaxResults=50  # Adjust the number of events to retrieve as needed
+    )
+
+    # Initialize an empty report
+    report = []
+
+    # Iterate over each event
+    for event in response['Events']:
+        # Extract relevant information from the event
+        event_name = event['EventName']
+        event_time = event['EventTime']
+        event_source = event['EventSource']
+        event_user = event['Username']
+
+        # Check if the event has resource information
+        if 'Resources' in event:
+            # Extract the resource name and ARN
+            resource = event['Resources'][0]
+            resource_name = resource['ResourceName']
+            resource_arn = resource['ARN']
+
+            # Check if the resource has tags
+            if 'Tags' in resource:
+                tags_exist = True
+            else:
+                tags_exist = False
+        else:
+            # Skip the event if it doesn't have resource information
+            continue
+
+        # Add the event information to the report
+        report.append({
+            'EventName': event_name,
+            'EventTime': event_time,
+            'EventSource': event_source,
+            'Username': event_user,
+            'ResourceName': resource_name,
+            'ResourceARN': resource_arn,
+            'TagsExist': tags_exist
+        })
+
+    # Generate the email body
+    email_body = ''
+    for item in report:
+        email_body += f"Event: {item['EventName']}\n"
+        email_body += f"  Time: {item['EventTime']}\n"
+        email_body += f"  Source: {item['EventSource']}\n"
+        email_body += f"  User: {item['Username']}\n"
+        email_body += f"  Resource: {item['ResourceName']}\n"
+        email_body += f"  ARN: {item['ResourceARN']}\n"
+        email_body += f"  Tags Exist: {item['TagsExist']}\n\n"
+
+    # Send the email
+    sender_email = 'your_sender_email@example.com'
+    recipient_email = 'your_recipient_email@example.com'
+    email_subject = 'CloudTrail Event Report'
+
+    send_email(email_subject, email_body, sender_email, recipient_email)
