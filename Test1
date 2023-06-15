@@ -1,0 +1,154 @@
+import boto3
+
+def send_email(subject, body):
+
+    ses_client = boto3.client('ses', region_name='us-west-2')  # Replace with your desired AWS region
+
+    # Replace with your email addresses
+
+    sender_email = 'sender@example.com'
+
+    recipient_email = 'recipient@example.com'
+
+    # Create the email message
+
+    email_message = {
+
+        'Subject': {'Data': subject},
+
+        'Body': {'Text': {'Data': body}},
+
+    }
+
+    # Send the email
+
+    response = ses_client.send_email(
+
+        Source=sender_email,
+
+        Destination={'ToAddresses': [recipient_email]},
+
+        Message=email_message
+
+    )
+
+    print('Email sent successfully')
+
+    print('Message ID:', response['MessageId'])
+
+def lambda_handler(event, context):
+
+    # Initialize the AWS client
+
+    cloudtrail_client = boto3.client('cloudtrail')
+
+    ecs_client = boto3.client('ecs')
+
+    s3_client = boto3.client('s3')
+
+    # Retrieve the creators for ECS services
+
+    ecs_events = cloudtrail_client.lookup_events(
+
+        LookupAttributes=[{'AttributeKey': 'EventName', 'AttributeValue': 'CreateService'}]
+
+    )
+
+    ecs_creators = set(event['Username'] for event in ecs_events['Events'])
+
+    # Retrieve the creators for S3 buckets
+
+    s3_events = cloudtrail_client.lookup_events(
+
+        LookupAttributes=[{'AttributeKey': 'EventName', 'AttributeValue': 'CreateBucket'}]
+
+    )
+
+    s3_creators = set(event['Username'] for event in s3_events['Events'])
+
+    # Check if ECS services have tags
+
+    ecs_tags_info = []
+
+    for event in ecs_events['Events']:
+
+        service_name = event['Resources'][0]['ResourceName']
+
+        response = ecs_client.describe_services(
+
+            cluster='your-cluster-name',
+
+            services=[service_name]
+
+        )
+
+        if 'tags' in response['services'][0]:
+
+            ecs_tags_info.append((service_name, True))
+
+        else:
+
+            ecs_tags_info.append((service_name, False))
+
+    # Check if S3 buckets have tags
+
+    s3_tags_info = []
+
+    for event in s3_events['Events']:
+
+        bucket_name = event['Resources'][0]['ResourceName']
+
+        try:
+
+            response = s3_client.get_bucket_tagging(Bucket=bucket_name)
+
+            if 'TagSet' in response:
+
+                s3_tags_info.append((bucket_name, True))
+
+            else:
+
+                s3_tags_info.append((bucket_name, False))
+
+        except s3_client.exceptions.NoSuchTagSetError:
+
+            s3_tags_info.append((bucket_name, False))
+
+    # Prepare the email body
+
+    body = 'Service Creation Report:\n\n'
+
+    
+
+    body += 'ECS Services:\n'
+
+    if len(ecs_creators) > 0:
+
+        for creator in ecs_creators:
+
+            body += f'- Creator: {creator}\n'
+
+        body += '\n'
+
+        body += 'ECS Services with Tags:\n'
+
+        for service, has_tags in ecs_tags_info:
+
+            body += f'- Service: {service}, Has Tags: {has_tags}\n'
+
+        body += '\n'
+
+    else:
+
+        body += 'No ECS Services created.\n\n'
+
+    body += 'S3 Buckets:\n'
+
+    if len(s3_creators) > 0:
+
+        for creator in s3_creators:
+
+            body += f'- Creator: {creator}\n'
+
+        body += '\n
+
